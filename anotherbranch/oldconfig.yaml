@@ -1,0 +1,350 @@
+apiVersion: v1
+data:
+  application-log.conf: |
+    [INPUT]
+        Name                tail
+        Tag                 kube.<namespace_name>.<container_name>.<pod_name>.<container_id>   
+        Tag_Regex           (?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<container_id>[a-z0-9]{64})\.log$
+        Exclude_Path        /var/log/containers/cloudwatch-agent*, /var/log/containers/fluent-bit*, /var/log/containers/aws-node*, /var/log/containers/kube-proxy*, /var/log/containers/fluentd*
+        Path                /var/log/containers/*.log
+        multiline.parser    cri, docker
+        Parser              cri, docker
+        DB                  /var/fluent-bit/state/flb_container.db
+        Mem_Buf_Limit       50MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Rotate_Wait         30
+        storage.type        filesystem
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [INPUT]
+        Name                tail
+        Tag                 application.*
+        Path                /var/log/containers/fluent-bit*
+        multiline.parser    docker, cri
+        DB                  /var/fluent-bit/state/flb_log.db
+        Mem_Buf_Limit       5MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [INPUT]
+        Name                tail
+        Tag                 application.*
+        Path                /var/log/containers/cloudwatch-agent*
+        multiline.parser    docker, cri
+        DB                  /var/fluent-bit/state/flb_cwagent.db
+        Mem_Buf_Limit       5MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.vccedge-uat.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        custom-tag
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.vccedge-prod.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        custom-tag
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.xartup-uat.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        custom-tag
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.xartup-prod.*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        custom-tag
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-uat.*
+        Key_Name            log
+        Parser              java_multi
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-prod.*
+        Key_Name            log
+        Parser              java_multi
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-uat.vccedge-uat-authentication-service.*
+        Key_Name            log
+        Parser              auth_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-prod.vccedge-prod-authentication-service.*
+        Key_Name            log
+        Parser              auth_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-uat.vccedge-uat-global-search-service.*
+        Key_Name            log
+        Parser              global_search_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-prod.vccedge-prod-global-search-service.*
+        Key_Name            log
+        Parser              global_search_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-prod.vccedge-prod-orchestrator-service.*
+        Key_Name            log
+        Parser              orchestrator_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-uat.vccedge-uat-orchestrator-service.*
+        Key_Name            log
+        Parser              orchestrator_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-uat.vccedge-uat-research-service.*
+        Key_Name            log
+        Parser              research_parser
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-prod.vccedge-prod-research-service.*
+        Key_Name            log
+        Parser              research_parser
+        Reserve_Data        True
+
+    [OUTPUT]
+        Name                es
+        Match               kube.vccedge-*
+        Exclude             kubernetes['namespace_name'] vccedge-prod
+        Generate_ID         On
+        Host                10.131.10.34
+        Logstash_Format     On
+        Logstash_Prefix_Key kubernetes['container_name']
+        Time_Key            @timestamp
+        Retry_Limit         False
+        Port                9200
+        Suppress_Type_Name  On
+
+    [OUTPUT]
+        Name                es
+        Match               kube.vccedge-prod.*
+        Logstash_Prefix_Key kubernetes['container_name']
+        tls.verify          Off
+        Generate_ID         On
+        Replace_Dots        On
+        Logstash_Format     On
+        Suppress_Type_Name  On
+        Log_Level           info
+        tls                 Off
+        Type                _doc
+        Retry_Limit         False
+        Time_Key            @timestamp
+        Host                10.131.114.12
+        Port                9200
+        HTTP_User           elastic
+        HTTP_Passwd         CLY9lvw_sjXpClaUQEAM
+
+    [OUTPUT]
+        Name                es
+        Match               kube.xartup-uat.*
+        Generate_ID         On
+        Host                10.131.10.34
+        Logstash_Format     On
+        Logstash_Prefix_Key kubernetes['container_name']
+        Time_Key            @timestamp
+        Retry_Limit         False
+        Port                9200
+        Suppress_Type_Name  On
+
+    [OUTPUT]
+        Name                es
+        Match               kube.xartup-prod.*
+        Logstash_Prefix_Key kubernetes['container_name']
+        tls.verify          Off
+        Generate_ID         On
+        Replace_Dots        On
+        Logstash_Format     On
+        Suppress_Type_Name  On
+        Log_Level           info
+        tls                 Off
+        Type                _doc
+        Retry_Limit         False
+        Time_Key            @timestamp
+        Host                10.131.114.12
+        Port                9200
+        HTTP_User           elastic
+        HTTP_Passwd         CLY9lvw_sjXpClaUQEAM
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush                     5
+        Grace                     30
+        Log_Level                 info
+        Daemon                    off
+        Parsers_File              parsers.conf
+        HTTP_Server               ${HTTP_SERVER}
+        HTTP_Listen               0.0.0.0
+        HTTP_Port                 ${HTTP_PORT}
+        storage.path              /var/fluent-bit/state/flb-storage/
+        storage.sync              normal
+        storage.checksum          off
+        storage.backlog.mem_limit 5M
+
+    @INCLUDE application-log.conf
+  parsers.conf: |
+    [PARSER]
+        Name                syslog
+        Format              regex
+        Regex               ^(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+        Time_Key            time
+        Time_Format         %b %d %H:%M:%S
+
+    [PARSER]
+        Name                container_firstline
+        Format              regex
+        Regex               (?<log>(?<="log":")\S(?!\.).*?)(?<!\\)".*(?<stream>(?<="stream":").*?)".*(?<time>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\w*).*(?=})
+        Time_Key            time
+        Time_Format         %Y-%m-%dT%H:%M:%S.%LZ
+
+    [PARSER]
+        Name                cwagent_firstline
+        Format              regex
+        Regex               (?<log>(?<="log":")\d{4}[\/-]\d{1,2}[\/-]\d{1,2}[ T]\d{2}:\d{2}:\d{2}(?!\.).*?)(?<!\\)".*(?<stream>(?<="stream":").*?)".*(?<time>\d{4}-\d{1,2}-\d{1,2}T\d{2}:\d{2}:\d{2}\.\w*).*(?=})
+        Time_Key            time
+        Time_Format         %Y-%m-%dT%H:%M:%S.%LZ
+
+    [PARSER]
+        Name                java_multi
+        Format              regex
+        Regex               ^(?<timestamp>[\d\-:\. ]+)\s+\[(?<level>\w+)\]\s+\[traceId=(?<traceId>[^,]*),spanId=(?<spanId>[^\]]*)\]\s+\[userId=(?<userId>[^\]]*)\]\s+\[requestId=(?<requestId>[^\]]*)\]\s+\[requestTime=(?<requestTime>[^\]]*)\]\s+\[url=(?<url>[^\]]*)\]\s+\[responseCode=(?<responseCode>[^\]]*)\](?:\s+\[durationMs=(?<duration>[^\]]*)\])?\s+(?<message>.*)$
+        Time_Key            time
+        Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                auth_parser
+        Format              regex
+        Regex               ^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\[(?<level>\w+)\]\s+\[traceId=(?<traceId>[^,\]]*),spanId=(?<spanId>[^\]]*)\]\s+\[userId=(?<userId>[^\]]*)\]\s+\[requestId=(?<requestId>[^\]]*)\]\s+\[url=(?<url>[^\]]*)\]\s+\[responseCode=(?<responseCode>\d*)\]\s+\[durationMs=(?<duration>\d*)\]\s+\[email=(?<email>[^\]]*)\]\s+(?<message>.*)$    
+        Time_Key            time
+        Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                global_search_parser
+        Format              regex
+        Regex               ^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\[(?<level>\w+)\]\s+(?:\[traceId=(?<traceId>[^,\]]*),spanId=(?<spanId>[^\]]*)\])\s+(?:\[userId=(?<userId>[^\]]*)\])\s+(?:\[requestId=(?<requestId>[^\]]*)\])\s+(?:\[url=(?<url>[^\]]*)\])\s+(?:\[responseCode=(?<responseCode>[^\]]*)\])\s+(?:\[durationMs=(?<duration>[^\]]*)\])\s+(?:\[email=(?<email>[^\]]*)\])\s+(?:(?:Response: (?<response>\d+)\s+\|\s+Duration: (?<duration_ms>\d+)ms\s+\|\s+Body:\s+(?<body>(?:(?!\|\s+Body:).)*))|(?<message>[\s\S]*))$
+        Time_Key            time
+        Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                orchestrator_parser
+        Format              regex
+        Regex               ^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\[(?<level>\w+)\]\s+(?:\[traceId=(?<traceId>[^,\]]*),spanId=(?<spanId>[^\]]*)\])\s+(?:\[userId=(?<userId>[^\]]*)\])\s+(?:\[requestId=(?<requestId>[^\]]*)\])\s+(?:\[url=(?<url>[^\]]*)\])\s+(?:\[responseCode=(?<responseCode>[^\]]*)\])\s+(?:\[durationMs=(?<duration>[^\]]*)\])\s+(?:\[email=(?<email>[^\]]*)\])\s+(?<message>[\s\S]*)$
+        Time_Key            time
+        Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                research_parser
+        Format              regex
+        Regex               ^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\[(?<level>\w+)\]\s+\[traceId=(?<traceId>[^,]+),spanId=(?<spanId>[^\]]*)\]\s+\[userId=(?<userId>[^\]]*)\]\s+\[requestId=(?<requestId>[^\]]*)\]\s+\[url=(?<url>[^\]]*)\]\s+\[responseCode=(?<responseCode>[^\]]*)\]\s+\[durationMs=(?<duration>[^\]]*)\]\s+\[email=(?<email>[^\]]*)\]\s+(?<message>.+)$
+        Time_Key            time
+        Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                nginx
+        Format              regex
+        Regex               ^(?<remote>[^ ]*) (?<host>[^ ]*) (?<user>[^ ]*) \[(?<time>[^\]]*)\] "(?<method>\S+)(?: +(?<path>[^\"]*?)(?: +\S*)?)?" (?<code>[^ ]*) (?<size>[^ ]*)(?: "(?<referer>[^\"]*)" "(?<agent>[^\"]*)")
+        Time_Key            time
+        Time_Format         %d/%b/%Y:%H:%M:%S %z
+
+    [PARSER]
+        Name                kube-custom
+        Format              regex
+        Regex               (?<tag>[^.]+)?\.?(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\.log$
+
+    [PARSER]
+        Name                custom-tag
+        Format              regex
+        Regex               ^(?<namespace_name>[^_]+)\.(?<container_name>.+)\.(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\.(?<container_id>[a-z0-9]{64}) 
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"application-log.conf":"[INPUT]\n    Name                tail\n    Tag                 kube.\u003cnamespace_name\u003e.\u003ccontainer_name\u003e.\u003cpod_name\u003e.\u003ccontainer_id\u003e\n    Tag_Regex           (?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?\u003cnamespace_name\u003e[^_]+)_(?\u003ccontainer_name\u003e.+)-(?\u003ccontainer_id\u003e[a-z0-9]{64})\\.log$\n    Exclude_Path        /var/log/containers/cloudwatch-agent*, /var/log/containers/fluent-bit*, /var/log/containers/aws-node*, /var/log/containers/kube-proxy*, /var/log/containers/fluentd*\n    Path          
+      /var/log/containers/*.log\n    multiline.parser    cri, docker\n    Parser              cri, docker\n    DB                  /var/fluent-bit/state/flb_container.db\n    Mem_Buf_Limit       50MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Rotate_Wait         30\n    storage.type        filesystem\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[INPUT]\n    Name                tail\n    Tag                 application.*\n    Path                /var/log/containers/fluent-bit*\n    multiline.parser    docker, cri\n    DB                  /var/fluent-bit/state/flb_log.db\n    Mem_Buf_Limit       5MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[INPUT]\n    Name                tail\n    Tag                 application.*\n    Path                /var/log/containers/cloudwatch-agent*\n    multiline.parser    docker, cri\n    DB                  /var/fluent-bit/state/flb_cwagent.db\n    Mem_Buf_Limit       5MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[FILTER]\n    Name                kubernetes\n    Match               kube.vccedge-uat.*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        custom-tag\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name              
+  kubernetes\n    Match               kube.vccedge-prod.*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        custom-tag\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name                kubernetes\n    Match               kube.xartup-uat.*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        custom-tag\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name                kubernetes\n    Match               kube.xartup-prod.*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        custom-tag\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-uat.*\n    Key_Name            log\n    Parser              java_multi\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-prod.*\n    Key_Name            log\n    Parser              java_multi\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-uat.vccedge-uat-authentication-service.*\n    Key_Name            log\n    Parser              auth_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-prod.vccedge-prod-authentication-service.*\n    Key_Name            log\n    Parser              auth_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-uat.vccedge-uat-global-search-service.*\n    Key_Name            log\n    Parser              global_search_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-prod.vccedge-prod-global-search-service.*\n    Key_Name            log\n    Parser              global_search_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match            
+   kube.vccedge-prod.vccedge-prod-orchestrator-service.*\n    Key_Name            log\n    Parser              orchestrator_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-uat.vccedge-uat-orchestrator-service.*\n    Key_Name            log\n    Parser              orchestrator_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-uat.vccedge-uat-research-service.*\n    Key_Name            log\n    Parser              research_parser\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-prod.vccedge-prod-research-service.*\n    Key_Name            log\n    Parser              research_parser\n    Reserve_Data        True\n\n[OUTPUT]\n    Name            
+    es\n    Match               kube.vccedge-*\n    Exclude             kubernetes['namespace_name'] vccedge-prod\n    Generate_ID         On\n    Host                10.131.10.34\n    Logstash_Format     On\n    Logstash_Prefix_Key kubernetes['container_name']\n    Time_Key          
+  @timestamp\n    Retry_Limit         False\n    Port                9200\n    Suppress_Type_Name  On\n\n[OUTPUT]\n    Name                es\n    Match               kube.vccedge-prod.*\n    Logstash_Prefix_Key kubernetes['container_name']\n    tls.verify          Off\n    Generate_ID         On\n    Replace_Dots        On\n    Logstash_Format     On\n    Suppress_Type_Name  On\n    Log_Level           info\n    tls                 Off\n    Type                _doc\n    Retry_Limit         False\n    Time_Key            @timestamp\n    Host                10.131.114.12\n    Port                9200\n    HTTP_User           elastic\n    HTTP_Passwd         
+CLY9lvw_sjXpClaUQEAM\n\n[OUTPUT]\n    Name                es\n    Match               kube.xartup-uat.*\n    Generate_ID         On\n    Host                10.131.10.34\n    Logstash_Format     On\n    Logstash_Prefix_Key kubernetes['container_name']\n    Time_Key            @timestamp\n    Retry_Limit         False\n    Port                9200\n    Suppress_Type_Name  On\n\n[OUTPUT]\n    Name                es\n    Match               kube.xartup-prod.*\n    Logstash_Prefix_Key kubernetes['container_name']\n    tls.verify          Off\n    Generate_ID         On\n    Replace_Dots        On\n    Logstash_Format     On\n    Suppress_Type_Name  On\n    Log_Level           info\n    tls                 Off\n    Type                _doc\n    Retry_Limit         False\n    Time_Key            @timestamp\n    Host                10.131.114.12\n    Port                9200\n    HTTP_User           elastic\n    HTTP_Passwd         CLY9lvw_sjXpClaUQEAM\n","fluent-bit.conf":"[SERVICE]\n    Flush                     5\n    Grace          
+           30\n    Log_Level                 info\n    Daemon                    off\n    Parsers_File              parsers.conf\n    HTTP_Server               ${HTTP_SERVER}\n    HTTP_Listen               0.0.0.0\n    HTTP_Port                 ${HTTP_PORT}\n    storage.path          
+    /var/fluent-bit/state/flb-storage/\n    storage.sync              normal\n    storage.checksum          off\n    storage.backlog.mem_limit 5M\n\n@INCLUDE application-log.conf\n","parsers.conf":"[PARSER]\n    Name                syslog\n    Format              regex\n    Regex               ^(?\u003ctime\u003e[^ ]* {1,2}[^ ]* [^ ]*) (?\u003chost\u003e[^ ]*) (?\u003cident\u003e[a-zA-Z0-9_\\/\\.\\-]*)(?:\\[(?\u003cpid\u003e[0-9]+)\\])?(?:[^\\:]*\\:)? *(?\u003cmessage\u003e.*)$\n    Time_Key            time\n    Time_Format         %b %d %H:%M:%S\n\n[PARSER]\n    Name                container_firstline\n    Format              regex\n    Regex              
+ (?\u003clog\u003e(?\u003c=\"log\":\")\\S(?!\\.).*?)(?\u003c!\\\\)\".*(?\u003cstream\u003e(?\u003c=\"stream\":\").*?)\".*(?\u003ctime\u003e\\d{4}-\\d{1,2}-\\d{1,2}T\\d{2}:\\d{2}:\\d{2}\\.\\w*).*(?=})\n    Time_Key            time\n    Time_Format         %Y-%m-%dT%H:%M:%S.%LZ\n\n[PARSER]\n    Name                cwagent_firstline\n    Format              regex\n    Regex               (?\u003clog\u003e(?\u003c=\"log\":\")\\d{4}[\\/-]\\d{1,2}[\\/-]\\d{1,2}[ T]\\d{2}:\\d{2}:\\d{2}(?!\\.).*?)(?\u003c!\\\\)\".*(?\u003cstream\u003e(?\u003c=\"stream\":\").*?)\".*(?\u003ctime\u003e\\d{4}-\\d{1,2}-\\d{1,2}T\\d{2}:\\d{2}:\\d{2}\\.\\w*).*(?=})\n    Time_Key          
+  time\n    Time_Format         %Y-%m-%dT%H:%M:%S.%LZ\n\n[PARSER]\n    Name                java_multi\n    Format              regex\n    Regex               ^(?\u003ctimestamp\u003e[\\d\\-:\\. ]+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+\\[traceId=(?\u003ctraceId\u003e[^,]*),spanId=(?\u003cspanId\u003e[^\\]]*)\\]\\s+\\[userId=(?\u003cuserId\u003e[^\\]]*)\\]\\s+\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\]\\s+\\[requestTime=(?\u003crequestTime\u003e[^\\]]*)\\]\\s+\\[url=(?\u003curl\u003e[^\\]]*)\\]\\s+\\[responseCode=(?\u003cresponseCode\u003e[^\\]]*)\\](?:\\s+\\[durationMs=(?\u003cduration\u003e[^\\]]*)\\])?\\s+(?\u003cmessage\u003e.*)$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                auth_parser\n    Format              regex\n    Regex               ^(?\u003ctimestamp\u003e\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+\\[traceId=(?\u003ctraceId\u003e[^,\\]]*),spanId=(?\u003cspanId\u003e[^\\]]*)\\]\\s+\\[userId=(?\u003cuserId\u003e[^\\]]*)\\]\\s+\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\]\\s+\\[url=(?\u003curl\u003e[^\\]]*)\\]\\s+\\[responseCode=(?\u003cresponseCode\u003e\\d*)\\]\\s+\\[durationMs=(?\u003cduration\u003e\\d*)\\]\\s+\\[email=(?\u003cemail\u003e[^\\]]*)\\]\\s+(?\u003cmessage\u003e.*)$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                global_search_parser\n    Format              regex\n    Regex               ^(?\u003ctimestamp\u003e\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+(?:\\[traceId=(?\u003ctraceId\u003e[^,\\]]*),spanId=(?\u003cspanId\u003e[^\\]]*)\\])\\s+(?:\\[userId=(?\u003cuserId\u003e[^\\]]*)\\])\\s+(?:\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\])\\s+(?:\\[url=(?\u003curl\u003e[^\\]]*)\\])\\s+(?:\\[responseCode=(?\u003cresponseCode\u003e[^\\]]*)\\])\\s+(?:\\[durationMs=(?\u003cduration\u003e[^\\]]*)\\])\\s+(?:\\[email=(?\u003cemail\u003e[^\\]]*)\\])\\s+(?:(?:Response: (?\u003cresponse\u003e\\d+)\\s+\\|\\s+Duration: (?\u003cduration_ms\u003e\\d+)ms\\s+\\|\\s+Body:\\s+(?\u003cbody\u003e(?:(?!\\|\\s+Body:).)*))|(?\u003cmessage\u003e[\\s\\S]*))$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                orchestrator_parser\n    Format            
+  regex\n    Regex               ^(?\u003ctimestamp\u003e\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+(?:\\[traceId=(?\u003ctraceId\u003e[^,\\]]*),spanId=(?\u003cspanId\u003e[^\\]]*)\\])\\s+(?:\\[userId=(?\u003cuserId\u003e[^\\]]*)\\])\\s+(?:\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\])\\s+(?:\\[url=(?\u003curl\u003e[^\\]]*)\\])\\s+(?:\\[responseCode=(?\u003cresponseCode\u003e[^\\]]*)\\])\\s+(?:\\[durationMs=(?\u003cduration\u003e[^\\]]*)\\])\\s+(?:\\[email=(?\u003cemail\u003e[^\\]]*)\\])\\s+(?\u003cmessage\u003e[\\s\\S]*)$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                research_parser\n    Format              regex\n    Regex               
+^(?\u003ctimestamp\u003e\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+\\[traceId=(?\u003ctraceId\u003e[^,]+),spanId=(?\u003cspanId\u003e[^\\]]*)\\]\\s+\\[userId=(?\u003cuserId\u003e[^\\]]*)\\]\\s+\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\]\\s+\\[url=(?\u003curl\u003e[^\\]]*)\\]\\s+\\[responseCode=(?\u003cresponseCode\u003e[^\\]]*)\\]\\s+\\[durationMs=(?\u003cduration\u003e[^\\]]*)\\]\\s+\\[email=(?\u003cemail\u003e[^\\]]*)\\]\\s+(?\u003cmessage\u003e.+)$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                nginx\n    Format              regex\n    Regex               ^(?\u003cremote\u003e[^ ]*) (?\u003chost\u003e[^ ]*) (?\u003cuser\u003e[^ ]*) \\[(?\u003ctime\u003e[^\\]]*)\\] \"(?\u003cmethod\u003e\\S+)(?: +(?\u003cpath\u003e[^\\\"]*?)(?: +\\S*)?)?\" (?\u003ccode\u003e[^ ]*) (?\u003csize\u003e[^ ]*)(?: \"(?\u003creferer\u003e[^\\\"]*)\" \"(?\u003cagent\u003e[^\\\"]*)\")\n    Time_Key            time\n    Time_Format         %d/%b/%Y:%H:%M:%S %z\n\n[PARSER]\n    Name                kube-custom\n    Format              regex\n    Regex               (?\u003ctag\u003e[^.]+)?\\.?(?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?\u003cnamespace_name\u003e[^_]+)_(?\u003ccontainer_name\u003e.+)-(?\u003cdocker_id\u003e[a-z0-9]{64})\\.log$\n\n[PARSER]\n    Name                custom-tag\n    Format              regex\n    Regex               ^(?\u003cnamespace_name\u003e[^_]+)\\.(?\u003ccontainer_name\u003e.+)\\.(?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?\u003ccontainer_id\u003e[a-z0-9]{64})\n"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"k8s-app":"fluent-bit"},"name":"fluent-bit-config","namespace":"logging"}}
+  creationTimestamp: "2025-05-28T09:27:42Z"
+  labels:
+    k8s-app: fluent-bit
+  name: fluent-bit-config
+  namespace: logging
+  resourceVersion: "214960539"
+  uid: 623a1b31-fe3c-450f-8d97-fc7fa0d654e6
