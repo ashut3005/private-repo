@@ -1,0 +1,196 @@
+apiVersion: v1
+data:
+  application-log.conf: |
+    [INPUT]
+        Name                tail
+        Tag                 kube.<namespace_name>.<container_name>.<pod_name>.<container_id>   
+        Tag_Regex           (?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<container_id>[a-z0-9]{64})\.log$
+        Exclude_Path        /var/log/containers/cloudwatch-agent*, /var/log/containers/fluent-bit*, /var/log/containers/aws-node*, /var/log/containers/kube-proxy*, /var/log/containers/fluentd*
+        Path                /var/log/containers/*.log
+        multiline.parser    cri, docker
+        Parser              cri, docker
+        DB                  /var/fluent-bit/state/flb_container.db
+        Buffer_Chunk_Size   512k
+        Buffer_Max_Size     5M
+        Mem_Buf_Limit       50MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Rotate_Wait         30
+        storage.type        filesystem
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [INPUT]
+        Name                tail
+        Tag                 application.*
+        Path                /var/log/containers/fluent-bit*
+        multiline.parser    docker, cri
+        DB                  /var/fluent-bit/state/flb_log.db
+        Mem_Buf_Limit       5MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [INPUT]
+        Name                tail
+        Tag                 application.*
+        Path                /var/log/containers/cloudwatch-agent*
+        multiline.parser    docker, cri
+        DB                  /var/fluent-bit/state/flb_cwagent.db
+        Mem_Buf_Limit       5MB
+        Skip_Long_Lines     On
+        Refresh_Interval    10
+        Read_from_Head      ${READ_FROM_HEAD}
+
+    [FILTER]
+        Name                grep
+        Match               kube.vccedge-qa.*
+        Exclude             log .*
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.vccedge-*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        kubernetes-parser
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                kubernetes
+        Match               kube.xartup-*
+        Kube_URL            https://kubernetes.default.svc:443
+        Kube_Tag_Prefix     kube.
+        Regex_Parser        kubernetes-parser
+        Merge_Log           On
+        Merge_Log_Key       log_processed
+        K8S-Logging.Parser  On
+        K8S-Logging.Exclude Off
+        Labels              Off
+        Annotations         Off
+        Use_Kubelet         On
+        Kubelet_Port        10250
+        Buffer_Size         0
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-*
+        Key_Name            log
+        Parser              generic_java_multi
+        Reserve_Data        True
+
+    [FILTER]
+        Name                parser
+        Match               kube.vccedge-*
+        Key_Name            log
+        Parser              kubernetes-parser
+        Reserve_Data        True
+
+    [OUTPUT]
+        Name                es
+        Match_Regex         ^kube\.vccedge-(?!prod\.).*
+        Generate_ID         Off
+        Host                10.131.10.34
+        Logstash_Format     On
+        Logstash_Prefix_Key kubernetes['container_name']
+        Time_Key            @timestamp
+        Retry_Limit         5
+        Port                9200
+        Suppress_Type_Name  On
+        tls                 Off
+        Trace_Output    On
+        Trace_Error     On
+
+
+    [OUTPUT]
+        Name                es
+        Match               kube.*-prod.*
+        Logstash_Prefix_Key kubernetes['container_name']
+        Generate_ID         Off
+        Replace_Dots        On
+        Logstash_Format     On
+        Suppress_Type_Name  On
+        Log_Level           info
+        tls                 Off
+        Type                _doc
+        Retry_Limit         5
+        Time_Key            @timestamp
+        Host                10.131.114.12
+        Port                9200
+        HTTP_User           elastic
+        HTTP_Passwd         CLY9lvw_sjXpClaUQEAM
+
+    # [OUTPUT]
+    #     Name                es
+    #     Match               kube.xartup-*
+    #     Generate_ID         Off
+    #     Host                10.131.10.34 #IP of dev ES cluster
+    #     Logstash_Format     On
+    #     Logstash_Prefix_Key kubernetes['container_name']
+    #     Time_Key            @timestamp
+    #     Retry_Limit         5
+    #     Port                9200
+    #     Suppress_Type_Name  On
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush                     5
+        Grace                     30
+        Log_Level                 debug
+        Daemon                    off
+        Parsers_File              parsers.conf
+        HTTP_Server               ${HTTP_SERVER}
+        HTTP_Listen               0.0.0.0
+        HTTP_Port                 ${HTTP_PORT}
+        storage.path              /var/fluent-bit/state/flb-storage/
+        storage.sync              normal
+        storage.checksum          off
+        storage.backlog.mem_limit 5M
+
+    @INCLUDE application-log.conf
+  parsers.conf: |
+    [PARSER]
+        Name                syslog
+        Format              regex
+        Regex               ^(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$
+        Time_Key            time
+        Time_Format         %b %d %H:%M:%S
+
+    [PARSER]
+        Name                generic_java_multi
+        Format              regex
+        Regex               ^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+)\s+\[(?<level>\w+)\]\s+(?:\[traceId=(?<traceId>[^,\]]*),spanId=(?<spanId>[^\]]*)\])\s+(?:\[userId=(?<userId>[^\]]*)\])\s+(?:\[requestId=(?<requestId>[^\]]*)\])\s+(?:\[sourcePage=(?<sourcePage>[^\]]*)\]\s+)?(?:\[url=(?<url>[^\]]*)\])\s+(?:\[responseCode=(?<responseCode>[^\]]*)\])\s+(?:\[durationMs=(?<duration>[^\]]*)\])\s+(?:\[email=(?<email>[^\]]*)\])\s+(?:(?:Response: (?<response>\d+)\s+\|\s+Duration: (?<duration_ms>\d+)ms\s+\|\s+Body:\s+(?<body>[\s\S]*))|(?<message>[\s\S]*))$     
+        #Time_Key            time
+        #Time_Format         %Y-%m-%d %H:%M:%S.%L
+
+    [PARSER]
+        Name                kube-custom
+        Format              regex
+        Regex               (?<tag>[^.]+)?\.?(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?<namespace_name>[^_]+)_(?<container_name>.+)-(?<docker_id>[a-z0-9]{64})\.log$
+
+    [PARSER]
+        Name                kubernetes-parser
+        Format              regex
+        Regex               ^(?<namespace_name>[^_]+)\.(?<container_name>.+)\.(?<pod_name>[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\.(?<container_id>[a-z0-9]{64}) 
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"application-log.conf":"[INPUT]\n    Name                tail\n    Tag                 kube.\u003cnamespace_name\u003e.\u003ccontainer_name\u003e.\u003cpod_name\u003e.\u003ccontainer_id\u003e\n    Tag_Regex           (?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?\u003cnamespace_name\u003e[^_]+)_(?\u003ccontainer_name\u003e.+)-(?\u003ccontainer_id\u003e[a-z0-9]{64})\\.log$\n    Exclude_Path        /var/log/containers/cloudwatch-agent*, /var/log/containers/fluent-bit*, /var/log/containers/aws-node*, /var/log/containers/kube-proxy*, /var/log/containers/fluentd*\n    Path          
+      /var/log/containers/*.log\n    multiline.parser    cri, docker\n    Parser              cri, docker\n    DB                  /var/fluent-bit/state/flb_container.db\n    Mem_Buf_Limit       50MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Rotate_Wait         30\n    storage.type        filesystem\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[INPUT]\n    Name                tail\n    Tag                 application.*\n    Path                /var/log/containers/fluent-bit*\n    multiline.parser    docker, cri\n    DB                  /var/fluent-bit/state/flb_log.db\n    Mem_Buf_Limit       5MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[INPUT]\n    Name                tail\n    Tag                 application.*\n    Path                /var/log/containers/cloudwatch-agent*\n    multiline.parser    docker, cri\n    DB                  /var/fluent-bit/state/flb_cwagent.db\n    Mem_Buf_Limit       5MB\n    Skip_Long_Lines     On\n    Refresh_Interval    10\n    Read_from_Head      ${READ_FROM_HEAD}\n\n[FILTER]\n    Name                kubernetes\n    Match               kube.vccedge-*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        kubernetes-parser\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name           
+     kubernetes\n    Match               kube.xartup-*\n    Kube_URL            https://kubernetes.default.svc:443\n    Kube_Tag_Prefix     kube.\n    Regex_Parser        kubernetes-parser\n    Merge_Log           On\n    Merge_Log_Key       log_processed\n    K8S-Logging.Parser  On\n    K8S-Logging.Exclude Off\n    Labels              Off\n    Annotations         Off\n    Use_Kubelet         On\n    Kubelet_Port        10250\n    Buffer_Size         0\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-*\n    Key_Name            log\n    Parser              generic_java_multi\n    Reserve_Data        True\n\n[FILTER]\n    Name                parser\n    Match               kube.vccedge-*\n    Key_Name            log\n    Parser              kubernetes-parser\n    Reserve_Data        True\n\n[OUTPUT]\n    Name                es\n    Match               kube.vccedge-*\n    Generate_ID         Off\n    Host                10.131.10.34\n    Logstash_Format     On\n    Logstash_Prefix_Key kubernetes['container_name']\n    Time_Key            @timestamp\n    Retry_Limit         5\n    Port         
+       9200\n    Suppress_Type_Name  On\n    tls                 Off\n\n[OUTPUT]\n    Name                es\n    Match               kube.*-prod.*\n    Logstash_Prefix_Key kubernetes['container_name']\n    Generate_ID         Off\n    Replace_Dots        On\n    Logstash_Format     On\n    Suppress_Type_Name  On\n    Log_Level           info\n    tls                 Off\n    Type                _doc\n    Retry_Limit         5\n    Time_Key            @timestamp\n    Host                10.131.114.12\n    Port                9200\n    HTTP_User           elastic\n    HTTP_Passwd         CLY9lvw_sjXpClaUQEAM\n\n[OUTPUT]\n    Name                es\n    Match               kube.xartup-*\n    Generate_ID         Off\n    Host                10.131.10.34\n    Logstash_Format     On\n    Logstash_Prefix_Key kubernetes['container_name']\n    Time_Key            @timestamp\n    Retry_Limit         5\n    Port                9200\n    Suppress_Type_Name  On\n","fluent-bit.conf":"[SERVICE]\n    Flush                     5\n    Grace                     30\n    Log_Level                 info\n    Daemon                    off\n    Parsers_File              parsers.conf\n    HTTP_Server               ${HTTP_SERVER}\n    HTTP_Listen               0.0.0.0\n    HTTP_Port                 ${HTTP_PORT}\n    storage.path              /var/fluent-bit/state/flb-storage/\n    storage.sync              normal\n    storage.checksum          off\n    storage.backlog.mem_limit 5M\n\n@INCLUDE application-log.conf\n","parsers.conf":"[PARSER]\n    Name                syslog\n    Format              regex\n    Regex               ^(?\u003ctime\u003e[^ ]* {1,2}[^ ]* [^ ]*) (?\u003chost\u003e[^ ]*) (?\u003cident\u003e[a-zA-Z0-9_\\/\\.\\-]*)(?:\\[(?\u003cpid\u003e[0-9]+)\\])?(?:[^\\:]*\\:)? *(?\u003cmessage\u003e.*)$\n    Time_Key            time\n    Time_Format         %b %d %H:%M:%S\n\n[PARSER]\n    Name                generic_java_multi\n    Format              regex\n    Regex           
+    ^(?\u003ctimestamp\u003e\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+)\\s+\\[(?\u003clevel\u003e\\w+)\\]\\s+(?:\\[traceId=(?\u003ctraceId\u003e[^,\\]]*),spanId=(?\u003cspanId\u003e[^\\]]*)\\])\\s+(?:\\[userId=(?\u003cuserId\u003e[^\\]]*)\\])\\s+(?:\\[requestId=(?\u003crequestId\u003e[^\\]]*)\\])\\s+(?:\\[url=(?\u003curl\u003e[^\\]]*)\\])\\s+(?:\\[responseCode=(?\u003cresponseCode\u003e[^\\]]*)\\])\\s+(?:\\[durationMs=(?\u003cduration\u003e[^\\]]*)\\])\\s+(?:\\[email=(?\u003cemail\u003e[^\\]]*)\\])\\s+(?:(?:Response: (?\u003cresponse\u003e\\d+)\\s+\\|\\s+Duration: (?\u003cduration_ms\u003e\\d+)ms\\s+\\|\\s+Body:\\s+(?\u003cbody\u003e(?:(?!\\|\\s+Body:).)*))|(?\u003cmessage\u003e[\\s\\S]*))$\n    Time_Key            time\n    Time_Format         %Y-%m-%d %H:%M:%S.%L\n\n[PARSER]\n    Name                kube-custom\n    Format             
+ regex\n    Regex               (?\u003ctag\u003e[^.]+)?\\.?(?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)_(?\u003cnamespace_name\u003e[^_]+)_(?\u003ccontainer_name\u003e.+)-(?\u003cdocker_id\u003e[a-z0-9]{64})\\.log$\n\n[PARSER]\n    Name                kubernetes-parser\n    Format              regex\n    Regex               ^(?\u003cnamespace_name\u003e[^_]+)\\.(?\u003ccontainer_name\u003e.+)\\.(?\u003cpod_name\u003e[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)\\.(?\u003ccontainer_id\u003e[a-z0-9]{64})\n"},"kind":"ConfigMap","metadata":{"annotations":{},"labels":{"k8s-app":"fluent-bit"},"name":"fluent-bit-config","namespace":"logging"}}
+  creationTimestamp: "2025-05-28T09:27:42Z"
+  labels:
+    k8s-app: fluent-bit
+  name: fluent-bit-config
+  namespace: logging
+  resourceVersion: "211514232"
+  uid: 623a1b31-fe3c-450f-8d97-fc7fa0d654e6
